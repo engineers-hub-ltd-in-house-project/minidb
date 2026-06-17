@@ -18,7 +18,7 @@
 ## 試し方
 
 ```sh
-git clone https://github.com/yusuke-sato-engineers-hub-ltd/minidb.git
+git clone https://github.com/engineers-hub-ltd-in-house-project/minidb.git
 cd minidb
 
 # テスト
@@ -31,7 +31,7 @@ go run ./cmd/minidb
 コマンドとして手元に入れて試すこともできます。
 
 ```sh
-go install github.com/yusuke-sato-engineers-hub-ltd/minidb/cmd/minidb@latest
+go install github.com/engineers-hub-ltd-in-house-project/minidb/cmd/minidb@latest
 minidb
 ```
 
@@ -46,10 +46,10 @@ minidb
 --- PASS: TestSlottedPageDeleteAndReuse (0.00s)
 === RUN   TestHeapFileInsert1000AndScan
     heap_test.go:111: inserted 1000 records across 2 pages, scan returned 1000
---- PASS: TestHeapFileInsert1000AndScan (1.87s)
+--- PASS: TestHeapFileInsert1000AndScan (1.74s)
 PASS
-ok  	github.com/yusuke-sato-engineers-hub-ltd/minidb	1.878s
-?   	github.com/yusuke-sato-engineers-hub-ltd/minidb/cmd/minidb	[no test files]
+ok  	github.com/engineers-hub-ltd-in-house-project/minidb	1.743s
+?   	github.com/engineers-hub-ltd-in-house-project/minidb/cmd/minidb	[no test files]
 ```
 
 `go run ./cmd/minidb` の出力:

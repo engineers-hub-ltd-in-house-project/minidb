@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	minidb "github.com/yusuke-sato-engineers-hub-ltd/minidb"
+	minidb "github.com/engineers-hub-ltd-in-house-project/minidb"
 )
 
 func main() {
