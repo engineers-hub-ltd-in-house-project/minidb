@@ -1,0 +1,22 @@
+# Binaries / build artifacts
+/minidb
+/cmd/minidb/minidb
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Database files (demo / test scratch)
+*.db
+
+# Dependency / vendor
+/vendor/
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
