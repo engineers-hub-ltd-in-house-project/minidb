@@ -1,16 +1,17 @@
 # minidb
 
-連載「DBRE への道」第 3 部で作っている、教材用の自作データベース minidb です。本リポジトリは **第 9 回** 時点のコードにあたります。
+連載「DBRE への道」第 3 部で作っている、教材用の自作データベース minidb です。本リポジトリは **第 10 回** 時点のコードにあたります。
 
-第 9 回時点では、次のところまでを実装しています。
+第 10 回時点では、次のところまでを実装しています。
 
 - **ページ** — 固定長 8KB（PostgreSQL に合わせた `PageSize`）のバイト列。
 - **スロット付きページ** — ページ内に可変長レコードを詰め、削除跡を `compact` で回収する。
 - **ディスクマネージャ** — ファイルをページ単位で読み書きし、ページ番号で位置を決める。
 - **ヒープファイルと全件走査** — ページを並べてレコードを溜め、全ページ・全スロットを順にたどる Seq Scan 相当の走査を行う。
 - **バッファプール** — 限られたフレームにページを載せ、ヒットならディスクへ行かずに返す。clock で置換し、書き換えた（dirty な）ページは flush で書き戻す。
+- **B+tree** — キーで RecordID（行の住所、ctid に当たる）を引く索引。ノードを 1 ページとしてバッファプール越しに読み書きする。葉に（キー, RecordID）と次の葉への横ポインタ、内部ノードに仕切りキーと子ページ番号を持つ。挿入で分割（葉は先頭キーを写し上げ、内部は中央キーを押し上げ）、削除で兄弟からの借用・併合・木の縮約を行い、葉の横つながりをたどる順序付き走査もできる。
 
-B+tree、ログとリカバリは、第 10 回以降でこのリポジトリに積み増していきます。
+ログとリカバリ（WAL）は、第 11 回以降でこのリポジトリに積み増していきます。
 
 ## 必要なもの
 
@@ -41,21 +42,29 @@ minidb
 `go test ./... -v` の出力:
 
 ```
+=== RUN   TestBTreeInsertAndSearch
+--- PASS: TestBTreeInsertAndSearch (0.74s)
+=== RUN   TestBTreeScanIsSorted
+--- PASS: TestBTreeScanIsSorted (0.44s)
+=== RUN   TestBTreeDeleteWithMerge
+--- PASS: TestBTreeDeleteWithMerge (0.48s)
+=== RUN   TestBTreeRandomizedAgainstMap
+--- PASS: TestBTreeRandomizedAgainstMap (2.30s)
 === RUN   TestBufferPoolWriteReadBack
---- PASS: TestBufferPoolWriteReadBack (0.02s)
+--- PASS: TestBufferPoolWriteReadBack (0.00s)
 === RUN   TestBufferPoolEvictionFlushesDirty
---- PASS: TestBufferPoolEvictionFlushesDirty (0.09s)
+--- PASS: TestBufferPoolEvictionFlushesDirty (0.03s)
 === RUN   TestBufferPoolAllPinnedReturnsError
---- PASS: TestBufferPoolAllPinnedReturnsError (0.03s)
+--- PASS: TestBufferPoolAllPinnedReturnsError (0.01s)
 === RUN   TestSlottedPageInsertGet
 --- PASS: TestSlottedPageInsertGet (0.00s)
 === RUN   TestSlottedPageDeleteAndReuse
 --- PASS: TestSlottedPageDeleteAndReuse (0.00s)
 === RUN   TestHeapFileInsert1000AndScan
     heap_test.go:111: inserted 1000 records across 2 pages, scan returned 1000
---- PASS: TestHeapFileInsert1000AndScan (3.53s)
+--- PASS: TestHeapFileInsert1000AndScan (1.78s)
 PASS
-ok  	github.com/engineers-hub-ltd-in-house-project/minidb	3.679s
+ok  	github.com/engineers-hub-ltd-in-house-project/minidb	5.794s
 ?   	github.com/engineers-hub-ltd-in-house-project/minidb/cmd/minidb	[no test files]
 ```
 
@@ -75,11 +84,13 @@ inserted 1000 records across 2 pages, scan returned 1000
 | `heap_test.go` | ページ／ヒープファイルのテスト |
 | `buffer.go` | バッファプール（フレーム管理・clock 置換・dirty/flush） |
 | `buffer_test.go` | バッファプールのテスト |
+| `btree.go` | B+tree 索引（探索・挿入・分割・削除・借用・併合・縮約・順序走査） |
+| `btree_test.go` | B+tree のテスト（挿入探索・順序走査・削除併合・ランダム照合） |
 | `cmd/minidb/main.go` | 1000 件入れて全件走査するデモ |
 
 ## バージョニング
 
-連載の回ごとにタグ（`v0.9` のような形）を打って、各回の状態をあとからたどれるようにする方針です。第 9 回時点ではまだタグを打っていません。
+連載の回ごとにタグ（`v0.10` のような形）を打って、各回の状態をあとからたどれるようにする方針です。第 10 回時点ではまだタグを打っていません。
 
 ## 注意
 
