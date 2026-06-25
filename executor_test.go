@@ -75,3 +75,35 @@ func TestFilter(t *testing.T) {
 		t.Fatalf("Filter は %v を返した、本来は %v", got, want)
 	}
 }
+
+// 三段を積み、てっぺんから引くと SELECT name FROM users WHERE age > 30 になる。
+func TestProjectAndPipeline(t *testing.T) {
+	m := NewTxManager()
+	tbl := NewMVCCTable()
+	seedUsers(m, tbl)
+
+	reader := m.Begin()
+	plan := NewProject(
+		NewFilter(NewSeqScan(tbl, reader), func(t *Tuple) bool {
+			return atoiOr(t.Values["age"], 0) > 30
+		}),
+		[]string{"name"},
+	)
+	rows := Run(plan)
+
+	got := collect(rows, "name")
+	want := []string{"Alice", "Carol"}
+	if !sameStrings(got, want) {
+		t.Fatalf("pipeline は %v を返した、本来は %v", got, want)
+	}
+
+	// Project が age を落とし、name を残していることを確かめる。
+	for _, r := range rows {
+		if _, ok := r.Values["age"]; ok {
+			t.Fatalf("Project が列 age を残してしまった: %v", r.Values)
+		}
+		if _, ok := r.Values["name"]; !ok {
+			t.Fatalf("Project が列 name を落としてしまった: %v", r.Values)
+		}
+	}
+}
