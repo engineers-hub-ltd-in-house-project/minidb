@@ -1,0 +1,60 @@
+package minidb
+
+import (
+	"sort"
+	"testing"
+)
+
+// seedUsers は、可視な行を数件入れたユーザ表を用意する。
+func seedUsers(m *TxManager, tbl *MVCCTable) {
+	tx := m.Begin()
+	tbl.Insert(tx, 1, "name=Alice,age=35")
+	tbl.Insert(tx, 2, "name=Bob,age=28")
+	tbl.Insert(tx, 3, "name=Carol,age=41")
+	m.Commit(tx)
+}
+
+// collect は結果から指定列を取り出し、並べ替えて返す。
+// 表は map なので走査順が決まらない。順序に依らない形で比べる。
+func collect(tuples []*Tuple, col string) []string {
+	var out []string
+	for _, t := range tuples {
+		out = append(out, t.Values[col])
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// SeqScan は、第 12 回の可視性をくぐらせ、削除済みの行を返さない。
+func TestSeqScanVisibility(t *testing.T) {
+	m := NewTxManager()
+	tbl := NewMVCCTable()
+	seedUsers(m, tbl)
+
+	// 別のトランザクションで 1 件削除し、確定する。
+	del := m.Begin()
+	if !tbl.Delete(del, 2) {
+		t.Fatal("delete failed")
+	}
+	m.Commit(del)
+
+	// 後から始めたトランザクションは、削除済みを見ない。
+	reader := m.Begin()
+	got := collect(Run(NewSeqScan(tbl, reader)), "name")
+	want := []string{"Alice", "Carol"}
+	if !sameStrings(got, want) {
+		t.Fatalf("SeqScan は %v を返した、本来は %v", got, want)
+	}
+}
