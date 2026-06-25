@@ -1,6 +1,7 @@
 package minidb
 
 import (
+	"strconv"
 	"strings"
 )
 
@@ -58,6 +59,62 @@ func (s *SeqScan) Next() (*Tuple, bool) {
 
 func (s *SeqScan) Close() { s.rows = nil }
 
+// Filter は条件で振り分ける段。合うものだけを上へ通す。
+type Filter struct {
+	child Operator
+	pred  func(*Tuple) bool
+}
+
+// NewFilter は下の段と条件を束ねた振り分けの段を作る。
+func NewFilter(child Operator, pred func(*Tuple) bool) *Filter {
+	return &Filter{child: child, pred: pred}
+}
+
+func (f *Filter) Open() { f.child.Open() }
+
+// Next は、条件に合う一件が来るまで下の段に出させ続ける。
+func (f *Filter) Next() (*Tuple, bool) {
+	for {
+		t, ok := f.child.Next()
+		if !ok {
+			return nil, false // 下が尽きたら、こちらも尽き
+		}
+		if f.pred(t) {
+			return t, true // 合うものだけ、上へ
+		}
+	}
+}
+
+func (f *Filter) Close() { f.child.Close() }
+
+// Project は列を絞る段。要る列だけを残す。
+type Project struct {
+	child Operator
+	cols  []string
+}
+
+// NewProject は下の段と残す列を束ねた絞り込みの段を作る。
+func NewProject(child Operator, cols []string) *Project {
+	return &Project{child: child, cols: cols}
+}
+
+func (p *Project) Open() { p.child.Open() }
+
+// Next は一件もらって、指定された列だけを残して返す。
+func (p *Project) Next() (*Tuple, bool) {
+	t, ok := p.child.Next()
+	if !ok {
+		return nil, false
+	}
+	out := &Tuple{Values: map[string]string{}}
+	for _, c := range p.cols {
+		out.Values[c] = t.Values[c]
+	}
+	return out, true
+}
+
+func (p *Project) Close() { p.child.Close() }
+
 // Run はてっぺんの段を尽きるまで引いて、結果を集める。
 // この一回の引きが、下の段まで伝わって全体を動かす。
 func Run(root Operator) []*Tuple {
@@ -85,4 +142,13 @@ func decodeRow(data string) *Tuple {
 		}
 	}
 	return t
+}
+
+// atoiOr は列の値を整数として読む。読めなければ既定値を返す。条件式の補助。
+func atoiOr(s string, def int) int {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return def
+	}
+	return n
 }

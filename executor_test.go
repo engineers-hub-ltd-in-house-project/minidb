@@ -58,3 +58,20 @@ func TestSeqScanVisibility(t *testing.T) {
 		t.Fatalf("SeqScan は %v を返した、本来は %v", got, want)
 	}
 }
+
+// Filter は、条件に合う行だけを上へ通す。
+func TestFilter(t *testing.T) {
+	m := NewTxManager()
+	tbl := NewMVCCTable()
+	seedUsers(m, tbl)
+
+	reader := m.Begin()
+	plan := NewFilter(NewSeqScan(tbl, reader), func(t *Tuple) bool {
+		return atoiOr(t.Values["age"], 0) > 30
+	})
+	got := collect(Run(plan), "name")
+	want := []string{"Alice", "Carol"} // 35 と 41
+	if !sameStrings(got, want) {
+		t.Fatalf("Filter は %v を返した、本来は %v", got, want)
+	}
+}
