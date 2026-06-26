@@ -67,3 +67,10 @@ type frozenRow struct {
 func (r frozenRow) visibleAt(current uint32) bool {
 	return xidPrecedes(r.xmin, current)
 }
+
+// freeze は、十分に古くなった行の作成番号を FrozenXID に置き換える。
+// 凍結した行は、いまの番号がいくつでも、一周しても、過去のままでいられる。
+func freeze(r frozenRow) frozenRow {
+	r.xmin = FrozenXID
+	return r
+}

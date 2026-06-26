@@ -66,3 +66,19 @@ func TestXIDWraparoundHidesUnfrozenRow(t *testing.T) {
 		t.Fatalf("周回後、xmin=100 の行がまだ見えている (current=%d)", far)
 	}
 }
+
+// TestFreezeSurvivesWraparound は、凍結した行が周回を生き延びることを確かめる。
+func TestFreezeSurvivesWraparound(t *testing.T) {
+	r := freeze(frozenRow{xmin: 100})
+	if r.xmin != FrozenXID {
+		t.Fatalf("凍結後の xmin が FrozenXID でない: %d", r.xmin)
+	}
+
+	far := uint32(100) + (uint32(1) << 31) + 1
+	if !r.visibleAt(far) {
+		t.Fatalf("凍結した行が周回後に見えなくなった (current=%d)", far)
+	}
+	if !r.visibleAt(200) {
+		t.Fatalf("凍結した行が見えない")
+	}
+}
