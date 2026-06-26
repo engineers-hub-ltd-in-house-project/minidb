@@ -52,3 +52,17 @@ func TestVacuumBlockedByOldTx(t *testing.T) {
 		t.Fatalf("古い tx を閉じた後の回収数 = %d, 本来は 1", removed)
 	}
 }
+
+// TestXIDWraparoundHidesUnfrozenRow は、凍結しない行が周回で消えることを見せる。
+func TestXIDWraparoundHidesUnfrozenRow(t *testing.T) {
+	r := frozenRow{xmin: 100}
+
+	if !r.visibleAt(200) {
+		t.Fatalf("xmin=100 の行が current=200 で見えない")
+	}
+
+	far := r.xmin + (uint32(1) << 31) + 1
+	if r.visibleAt(far) {
+		t.Fatalf("周回後、xmin=100 の行がまだ見えている (current=%d)", far)
+	}
+}

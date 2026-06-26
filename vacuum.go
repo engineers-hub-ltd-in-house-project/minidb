@@ -40,3 +40,30 @@ func Vacuum(t *MVCCTable, oldestActive XID) int {
 	}
 	return removed
 }
+
+// FrozenXID は、何に対しても過去とみなす特別な番号。
+// 周回の説明のため、64 ビットの XID とは別に、32 ビットの小さなモデルとして閉じてある。
+const FrozenXID = uint32(2)
+
+// xidPrecedes は、番号 a が b より前かを、大小ではなく距離で決める。
+// int32(a-b) が肝。番号は 32 ビットで回り、差を符号付きで見て負なら過去とみなす。
+// 素朴な大小比較は一周した瞬間に壊れるが、これは約半周ぶんだけ前を過去とみなす。
+func xidPrecedes(a, b uint32) bool {
+	if a == FrozenXID {
+		return true
+	}
+	if b == FrozenXID {
+		return false
+	}
+	return int32(a-b) < 0
+}
+
+// frozenRow は、周回の説明に絞った、作成番号だけの行。
+type frozenRow struct {
+	xmin uint32
+}
+
+// visibleAt は、いまの番号から見て、この行が見えるかを返す。
+func (r frozenRow) visibleAt(current uint32) bool {
+	return xidPrecedes(r.xmin, current)
+}
