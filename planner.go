@@ -1,9 +1,21 @@
 package minidb
 
+import (
+	"fmt"
+	"strconv"
+)
+
 // この回で足すのは三つ。
 // 一つは Index。第 10 回の B+tree を、列の値から行のありかへの索引として使う。
 // 一つは IndexScan。索引で一点引きして、該当する行だけを返す走査の段。
 // 一つは Planner。同じ条件に対し、全件走査と索引走査の費用を見積もり、安いほうを選ぶ。
+
+// 費用の単位。順番に読む 1 件を 1.0 とし、索引経由の 1 件はそれより高く見積もる。
+// PostgreSQL の seq_page_cost と random_page_cost の既定（1 と 4）と同じ比に合わせている。
+const (
+	seqRowCost    = 1.0
+	randomRowCost = 4.0
+)
 
 // Index は、ある列の値から行 ID への索引。第 10 回の B+tree をそのまま使う。
 // MVCC 表では行のありかは rowID そのものなので、RecordID にはその rowID を入れる。
@@ -95,4 +107,63 @@ func (s Stats) estimateRows(col string) int {
 		est = 1
 	}
 	return est
+}
+
+// Plan は、選ばれた計画。走査の種類、見積もり行数、費用、そして実行する段。
+type Plan struct {
+	Node    string // "Seq Scan" か "Index Scan"
+	EstRows int
+	Cost    float64
+	root    Operator
+}
+
+// Root は、この計画を実行する段を返す。Run に渡して動かす。
+func (p Plan) Root() Operator { return p.root }
+
+// Explain は、EXPLAIN のような一行を返す。選んだ走査と、見積もりの行数・費用。
+func (p Plan) Explain() string {
+	return fmt.Sprintf("%s  (cost=%.2f rows=%d)", p.Node, p.Cost, p.EstRows)
+}
+
+// Planner は、表と統計と使える索引を持ち、条件から安い計画を選ぶ。
+type Planner struct {
+	table   *MVCCTable
+	stats   Stats
+	indexes map[string]*Index // 列名 → 索引
+}
+
+// NewPlanner は、表・統計・列ごとの索引を束ねたプランナを作る。
+func NewPlanner(table *MVCCTable, stats Stats, indexes map[string]*Index) *Planner {
+	return &Planner{table: table, stats: stats, indexes: indexes}
+}
+
+// PlanEquals は、col = key の等値条件に対して計画を立てる。
+// 索引があり、索引走査のほうが安いなら IndexScan。そうでなければ全件走査に Filter。
+func (pl *Planner) PlanEquals(tx *Tx, col string, key int64) Plan {
+	est := pl.stats.estimateRows(col)
+	seqCost := float64(pl.stats.RowCount) * seqRowCost
+
+	if ix, ok := pl.indexes[col]; ok {
+		idxCost := float64(est) * randomRowCost
+		if idxCost < seqCost {
+			return Plan{
+				Node:    "Index Scan",
+				EstRows: est,
+				Cost:    idxCost,
+				root:    NewIndexScan(pl.table, tx, ix, key),
+			}
+		}
+	}
+
+	// 索引が無いか、全件走査のほうが安い。条件は Filter で当てる。
+	want := strconv.FormatInt(key, 10)
+	root := NewFilter(NewSeqScan(pl.table, tx), func(t *Tuple) bool {
+		return t.Values[col] == want
+	})
+	return Plan{
+		Node:    "Seq Scan",
+		EstRows: est,
+		Cost:    seqCost,
+		root:    root,
+	}
 }
