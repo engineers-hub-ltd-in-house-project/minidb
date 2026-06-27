@@ -75,3 +75,24 @@ func (s *IndexScan) Next() (*Tuple, bool) {
 }
 
 func (s *IndexScan) Close() { s.rows = nil }
+
+// Stats は、計画を立てるための見積もり材料。表の行数と、列ごとの異なり数。
+// PostgreSQL では ANALYZE が集めて pg_statistic に貯める情報に当たる。
+type Stats struct {
+	RowCount int
+	Distinct map[string]int // 列名 → その列の異なる値の数
+}
+
+// estimateRows は、col = val の等値条件に一致する行数を見積もる。
+// 異なり数が多いほど、一致は少ない。PostgreSQL の選択性見積もりの素朴版。
+func (s Stats) estimateRows(col string) int {
+	d := s.Distinct[col]
+	if d <= 0 {
+		return s.RowCount // 異なり数を知らなければ、最悪を見込む
+	}
+	est := s.RowCount / d
+	if est < 1 {
+		est = 1
+	}
+	return est
+}
