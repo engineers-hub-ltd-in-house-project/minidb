@@ -1,5 +1,7 @@
 package minidb
 
+import "math/rand"
+
 // HitStats は、ページ参照のヒットとミスを数えた結果。
 type HitStats struct {
 	Hits   int
@@ -35,4 +37,19 @@ func MeasureHitRate(disk *DiskManager, size int, refs []int) (HitStats, error) {
 		bp.Unpin(pageID, false)
 	}
 	return s, nil
+}
+
+// LocalReferences は、偏りのある参照列を作る。
+// hot 本のページに参照の hotShare を集め、残りを全体へ散らす。
+// 「よく触る一部」と「たまに触る全体」という、現実の偏りの再現。
+func LocalReferences(rng *rand.Rand, total, hot, count int, hotShare float64) []int {
+	refs := make([]int, count)
+	for i := range refs {
+		if rng.Float64() < hotShare {
+			refs[i] = rng.Intn(hot)
+		} else {
+			refs[i] = rng.Intn(total)
+		}
+	}
+	return refs
 }
