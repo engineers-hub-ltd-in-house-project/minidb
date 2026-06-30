@@ -53,3 +53,18 @@ func LocalReferences(rng *rand.Rand, total, hot, count int, hotShare float64) []
 	}
 	return refs
 }
+
+// BackendMemory は、接続数と 1 接続あたりのメモリ（MiB）から、見込みの総メモリを返す。
+// PostgreSQL は接続ごとにプロセスを持つので、メモリは接続数に比例して増える。
+func BackendMemory(connections int, perConnMiB float64) float64 {
+	return float64(connections) * perConnMiB
+}
+
+// PoolingCapsBackends は、接続プールを挟んだときの実 backend 接続数を返す。
+// 表側の接続がいくつあっても、backend は poolSize までに収まる。PgBouncer の効き目。
+func PoolingCapsBackends(clientConnections, poolSize int) int {
+	if clientConnections < poolSize {
+		return clientConnections
+	}
+	return poolSize
+}

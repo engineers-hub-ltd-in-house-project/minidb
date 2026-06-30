@@ -64,3 +64,26 @@ func TestHitRateRisesWithDiminishingReturns(t *testing.T) {
 		t.Fatalf("伸びが鈍るはず: 2->10 が %.3f、40->100 が %.3f", early, late)
 	}
 }
+
+// 接続プールは、表側の接続がいくつでも、backend を上限に収める。
+// その結果、接続数に比例していた総メモリが頭打ちになる。
+func TestPoolingCapsBackendMemory(t *testing.T) {
+	const perConn = 10.0 // 1 接続あたり 10 MiB と仮定
+
+	// プールなし。1000 接続が、そのまま 1000 backend になる。
+	noPool := BackendMemory(1000, perConn)
+
+	// プールあり。backend は 50 までに収まる。
+	capped := PoolingCapsBackends(1000, 50)
+	withPool := BackendMemory(capped, perConn)
+
+	if capped != 50 {
+		t.Fatalf("プール後の backend = %d、本来は 50", capped)
+	}
+	if !(withPool < noPool) {
+		t.Fatalf("プールで総メモリが減るはず: %.0f vs %.0f", withPool, noPool)
+	}
+	if withPool != 500.0 {
+		t.Fatalf("プール後の総メモリ = %.0f MiB、本来は 500", withPool)
+	}
+}
