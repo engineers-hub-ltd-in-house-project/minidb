@@ -1,8 +1,8 @@
 # minidb
 
-連載「DBRE への道」第 3 部で作っている、教材用の自作データベース minidb です。本リポジトリは **第 15 回** 時点のコードにあたります。
+連載「DBRE への道」第 3 部で作っている、教材用の自作データベース minidb です。本リポジトリは **第 16 回** 時点のコードにあたります。
 
-第 15 回時点では、次のところまでを実装しています。
+第 16 回時点では、次のところまでを実装しています。
 
 - **ページ** — 固定長 8KB（PostgreSQL に合わせた `PageSize`）のバイト列。
 - **スロット付きページ** — ページ内に可変長レコードを詰め、削除跡を `compact` で回収する。
@@ -14,6 +14,7 @@
 - **クエリ処理** — Volcano モデルのイテレータ（開く・一件出す・閉じるの三つで揃えた処理段）を積み重ね、てっぺんから一件ずつ引く実行器。表を頭から読む `SeqScan` は第 12 回の可視性をくぐらせ、見える行だけを返す。条件で振り分ける `Filter`、要る列だけ残す `Project` を上に重ね、`Run` でてっぺんから尽きるまで引くと、`SELECT name FROM users WHERE age > 30` が表を一周しながら一件ずつ流れる。途中に全件を抱えないのが基本で、PostgreSQL の EXPLAIN に出るあのインデントされた木と同じ積み方になる。
 - **VACUUM と番号の周回** — 書き換えや削除で残った古い版を実際に表から取り除く回収。回収してよい境界は、いちばん古い現役のトランザクション（`OldestActive`）が決め、それより前に消された版だけを `Vacuum` が捨てて行を詰め直す。古いトランザクションが一本でも開いていると境界がそこで止まり、回収できないまま版が溜まる。あわせて、トランザクション番号が 32 ビットで一周すると過去が未来に見える「周回」を、前後を大小ではなく距離（`int32(a-b)` の符号）で決める `xidPrecedes` の小さなモデルで再現し、古い行の作成番号を特別な `FrozenXID` に置き換える `freeze`（凍結）で、一周しても過去のまま見え続けるようにする。PostgreSQL の autovacuum が背後で回している、回収と凍結の二つの仕事に当たる。
 - **EXPLAIN とプランナ** — 同じ等値条件に対する全件走査と索引走査に費用の数字をつけ、安いほうの実行の木を選ぶ費用ベースのプランナ。第 10 回の B+tree を列の値から行 ID への索引にした `IndexScan` を足し、全件走査と同じ三つの約束（開く・一件出す・閉じる）で差し替えられるようにする。当たる行数は列の異なり数から見積もり（`Stats` / `estimateRows`、一意な列なら一行、二種類しかない列なら半分）、順番読み 1 件を 1.0・索引経由 1 件を 4.0（PostgreSQL の `seq_page_cost` と `random_page_cost` の既定比）として費用を比べる。`PlanEquals` は一意な `id` には Index Scan を、二種類しかない `city` には索引があっても Seq Scan を選ぶ。索引が使われないのは壊れているからではなく、当たる行が多すぎて拾い読みより全件順読みが安いと見積もりが言うから。`Plan` の `Cost` と `EstRows`、`Explain` の一行は、PostgreSQL の `EXPLAIN` に出る cost と rows そのもの。
+- **チューニングの原理** — 限られたメモリをバッファプールと接続でどう分けるかを、手元の計測で裏づける回。第 9 回のバッファプールに参照列を流してヒット率を測る `MeasureHitRate` と、よく触る一部に参照を集めた偏りのある参照列を作る `LocalReferences` で、容量を増やすほどヒット率は上がるが、よく触る一部が収まったあとは伸びが鈍ることを数で見せる（容量 2 で 0.16、10 で 0.65、40 で 0.91、100 で 0.98）。容量を決める基準は、全データ量ではなく、よく触る一部の大きさ。あわせて、接続ごとにプロセスとメモリを持つ PostgreSQL を `BackendMemory`（メモリは接続数に比例）で、接続プール（PgBouncer 相当）が奥の接続を上限に束ねて総メモリを頭打ちにするさまを `PoolingCapsBackends`（千接続を五十に、10000 MiB を 500 MiB に）でモデル化する。`shared_buffers` の効きは `pg_stat_database` のヒット率で測り、`work_mem` は接続数との積で見て、接続は増やす前にプールで絞る、という運用判断につながる。
 
 ## 必要なもの
 
@@ -79,6 +80,11 @@ minidb
 --- PASS: TestPlannerFallsBackWithoutIndex (0.34s)
 === RUN   TestPlanExplainShowsChoice
 --- PASS: TestPlanExplainShowsChoice (0.34s)
+=== RUN   TestHitRateRisesWithDiminishingReturns
+    tuning_test.go:47: hit rate: pool=2 0.159, 10 0.652, 40 0.908, 100 0.980
+--- PASS: TestHitRateRisesWithDiminishingReturns (0.33s)
+=== RUN   TestPoolingCapsBackendMemory
+--- PASS: TestPoolingCapsBackendMemory (0.00s)
 === RUN   TestVacuumReclaimsDeadVersions
 --- PASS: TestVacuumReclaimsDeadVersions (0.00s)
 === RUN   TestVacuumBlockedByOldTx
@@ -88,7 +94,7 @@ minidb
 === RUN   TestFreezeSurvivesWraparound
 --- PASS: TestFreezeSurvivesWraparound (0.00s)
 PASS
-ok  	github.com/engineers-hub-ltd-in-house-project/minidb	7.778s
+ok  	github.com/engineers-hub-ltd-in-house-project/minidb	7.876s
 ?   	github.com/engineers-hub-ltd-in-house-project/minidb/cmd/minidb	[no test files]
 ```
 
@@ -118,11 +124,13 @@ inserted 1000 records across 2 pages, scan returned 1000
 | `vacuum_test.go` | VACUUM のテスト（回収・古い tx による回収停止・周回での消失・凍結での生存） |
 | `planner.go` | EXPLAIN とプランナ（索引走査・異なり数からの行数見積もり・費用比較で安い木を選ぶ） |
 | `planner_test.go` | プランナのテスト（選択性が高い時の索引走査・低い時の全件走査・索引なしの退避・Explain） |
+| `tuning.go` | チューニングの原理（ヒット率の計測・偏りのある参照で容量とヒット率の鈍り・接続に比例するメモリとプールによる頭打ち） |
+| `tuning_test.go` | チューニングのテスト（容量を上げるとヒット率の伸びが鈍る・プールで backend と総メモリが頭打ち） |
 | `cmd/minidb/main.go` | 1000 件入れて全件走査するデモ |
 
 ## バージョニング
 
-連載の回ごとにタグ（`v0.10` のような形）を打って、各回の状態をあとからたどれるようにする方針です。第 15 回時点ではまだタグを打っていません。
+連載の回ごとにタグ（`v0.10` のような形）を打って、各回の状態をあとからたどれるようにする方針です。第 16 回時点ではまだタグを打っていません。
 
 ## 注意
 
