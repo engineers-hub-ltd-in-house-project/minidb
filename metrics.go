@@ -77,3 +77,39 @@ func BufferPoolUSE(bp *BufferPool, s HitStats) USEStat {
 	}
 	return USEStat{Utilization: util, Saturation: sat}
 }
+
+// versionCounts は、表の生きた版と不要な版を数える。
+func versionCounts(t *MVCCTable, oldestActive XID) (live, dead int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, vs := range t.rows {
+		for _, v := range vs {
+			if v.xmax != 0 && v.xmax < oldestActive {
+				dead++
+			} else {
+				live++
+			}
+		}
+	}
+	return live, dead
+}
+
+// StorageUSE は、表を資源として USE で表す。
+// 飽和 = 不要タプルの割合。回収が追いつかず溜まっているほど高い。第 14 回の回収の遅れが、ここに出る。
+func StorageUSE(t *MVCCTable, oldestActive XID) USEStat {
+	live, dead := versionCounts(t, oldestActive)
+	total := live + dead
+	sat := 0.0
+	if total > 0 {
+		sat = float64(dead) / float64(total)
+	}
+	return USEStat{Saturation: sat}
+}
+
+// Observation は、ある時点の観測をひとまとめにしたもの。
+// 資源は USE、処理は RED。定期的に取れば、状態の移り変わりが読める。
+type Observation struct {
+	Buffer  USEStat // 資源：バッファプール
+	Storage USEStat // 資源：表（不要タプルの溜まり）
+	Query   REDStat // 処理：クエリ
+}

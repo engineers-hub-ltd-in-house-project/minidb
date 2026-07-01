@@ -64,3 +64,37 @@ func TestBufferPoolUSEReflectsFillAndMisses(t *testing.T) {
 		t.Fatalf("飽和 = %f、本来は 0 と 1 の間", use.Saturation)
 	}
 }
+
+// 表の USE。不要タプルが溜まると、飽和が上がる。回収すると下がる。
+func TestStorageUSEReflectsDeadTuples(t *testing.T) {
+	m := NewTxManager()
+	tbl := NewMVCCTable()
+
+	t1 := m.Begin()
+	tbl.Insert(t1, 1, "v1")
+	tbl.Insert(t1, 2, "keep")
+	m.Commit(t1)
+
+	// 行 1 を二回書き換え、古い版を二つ作る。
+	t2 := m.Begin()
+	tbl.Update(t2, 1, "v2")
+	m.Commit(t2)
+	t3 := m.Begin()
+	tbl.Update(t3, 1, "v3")
+	m.Commit(t3)
+
+	before := StorageUSE(tbl, m.OldestActive())
+	if !(before.Saturation > 0) {
+		t.Fatalf("回収前の飽和 = %f、本来は正", before.Saturation)
+	}
+
+	// 回収すると、飽和は下がる。
+	Vacuum(tbl, m.OldestActive())
+	after := StorageUSE(tbl, m.OldestActive())
+	if !(after.Saturation < before.Saturation) {
+		t.Fatalf("回収後の飽和 = %f、回収前 %f より下がるはず", after.Saturation, before.Saturation)
+	}
+	if after.Saturation != 0 {
+		t.Fatalf("回収後の飽和 = %f、本来は 0", after.Saturation)
+	}
+}
