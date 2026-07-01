@@ -37,3 +37,43 @@ func (r REDStat) AvgDuration() time.Duration {
 	}
 	return r.TotalTime / time.Duration(r.Count)
 }
+
+// USEStat は、資源の観測。Utilization, Saturation, Errors。
+type USEStat struct {
+	Utilization float64 // 使用率：資源のうち使っている割合。0 から 1
+	Saturation  float64 // 飽和：処理しきれず待たされている度合い
+	Errors      int     // エラー：資源が返した失敗の数
+}
+
+// ObserveBuffer は、参照列を bp に流し、ヒット統計を返す。
+// bp は呼び出し側が保持するので、流したあとの使用率を BufferPoolUSE で読める。
+func ObserveBuffer(bp *BufferPool, refs []int) (HitStats, error) {
+	var s HitStats
+	for _, pageID := range refs {
+		if _, resident := bp.table[pageID]; resident {
+			s.Hits++
+		} else {
+			s.Misses++
+		}
+		if _, err := bp.FetchPage(pageID); err != nil {
+			return s, err
+		}
+		bp.Unpin(pageID, false)
+	}
+	return s, nil
+}
+
+// BufferPoolUSE は、バッファプールを資源として USE で表す。
+// 使用率 = 載っているページ数 / フレーム数。飽和 = ミス率。ミスが多いほど、容量に働きが詰まっている。
+func BufferPoolUSE(bp *BufferPool, s HitStats) USEStat {
+	capacity := len(bp.frames)
+	util := 0.0
+	if capacity > 0 {
+		util = float64(len(bp.table)) / float64(capacity)
+	}
+	sat := 0.0
+	if s.Total() > 0 {
+		sat = float64(s.Misses) / float64(s.Total())
+	}
+	return USEStat{Utilization: util, Saturation: sat}
+}
