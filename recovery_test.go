@@ -3,6 +3,7 @@ package minidb
 import (
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // pageWith は、短い文字列を 1 件だけ入れたページの画像を返す。
@@ -27,6 +28,14 @@ func readSlot0(t *testing.T, disk *DiskManager, pageID int) string {
 		t.Fatalf("Get failed: %v", err)
 	}
 	return string(b)
+}
+
+func durApprox(a, b time.Duration) bool {
+	d := a - b
+	if d < 0 {
+		d = -d
+	}
+	return d < time.Second
 }
 
 // PITR は、誤った上書きの手前まで巻き戻す。全適用と対比する。
@@ -81,5 +90,28 @@ func TestPITRRecoversToPointBeforeBadWrite(t *testing.T) {
 	}
 	if got := readSlot0(t, diskB, 1); got != "BAD" {
 		t.Fatalf("全適用後の page 1 = %q、本来は BAD（誤上書きが入る）", got)
+	}
+}
+
+// エラーバジェットは、目標可用率と期間から、許される停止時間を出す。
+func TestErrorBudget(t *testing.T) {
+	window := 30 * 24 * time.Hour
+
+	// 99.9 パーセントを 30 日で守る → 停止許容は約 43.2 分。
+	budget := ErrorBudget(0.999, window)
+	if !durApprox(budget, 43*time.Minute+12*time.Second) {
+		t.Fatalf("エラーバジェット = %v、本来は約 43m12s", budget)
+	}
+
+	// 30 分使ったら、残りは約 13.2 分。
+	rem := BudgetRemaining(0.999, window, 30*time.Minute)
+	if !durApprox(rem, 13*time.Minute+12*time.Second) {
+		t.Fatalf("残り = %v、本来は約 13m12s", rem)
+	}
+
+	// 使い切って超えると、残りは負になる。
+	over := BudgetRemaining(0.999, window, 60*time.Minute)
+	if over >= 0 {
+		t.Fatalf("超過時の残り = %v、本来は負", over)
 	}
 }

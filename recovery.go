@@ -5,6 +5,7 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+	"time"
 )
 
 // この回で足すのは二つ。
@@ -67,4 +68,21 @@ func replayWAL(walPath string, disk *DiskManager, limit int) (int, error) {
 		applied++
 	}
 	return applied, nil
+}
+
+// ここから、守ると約束した可用率の話。
+//
+// SLO は、どこまで守るかを数字にした約束。100 パーセントは約束しない。
+// 約束しなかった残りが、止まってよい分。それがエラーバジェット。
+
+// ErrorBudget は、目標可用率 objective(0 から 1) と期間 window から、許される停止時間を返す。
+// 99.9 パーセントを 30 日で守るなら、許される停止は約 43 分。この 43 分がエラーバジェット。
+func ErrorBudget(objective float64, window time.Duration) time.Duration {
+	return time.Duration(float64(window) * (1 - objective))
+}
+
+// BudgetRemaining は、これまでの停止 downtime を引いた、残りのエラーバジェット。
+// 負になっていたら、約束を破っている。
+func BudgetRemaining(objective float64, window, downtime time.Duration) time.Duration {
+	return ErrorBudget(objective, window) - downtime
 }
